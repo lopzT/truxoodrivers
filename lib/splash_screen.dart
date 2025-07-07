@@ -218,3 +218,4 @@ class _TypingSplashScreenState extends State<TypingSplashScreen>
     );
   }
 }
+//ready

@@ -16,7 +16,6 @@ class _TrackTruckState extends State<TrackTruck> {
   Timer? _locationUpdateTimer;
   int _updateCount = 0;
 
-  // This would come from your backend
   final Map<String, DeliveryInfo> _deliveryDatabase = {
     'TRX123456': DeliveryInfo(
       truckId: 'OD02AB1234',
@@ -30,7 +29,7 @@ class _TrackTruckState extends State<TrackTruck> {
     ),
   };
 
-  // Simulate realistic location updates
+
   final Map<String, List<String>> _locationProgression = {
     'TRX123456': [
       'Near Rasulgarh Square, Bhubaneswar',
@@ -67,11 +66,11 @@ class _TrackTruckState extends State<TrackTruck> {
       _updateCount = 0;
     });
 
-    // Start periodic location updates (only for in-transit deliveries)
+    
     _locationUpdateTimer?.cancel();
     if (delivery.status.toLowerCase() == 'in transit') {
       _locationUpdateTimer = Timer.periodic(
-        const Duration(minutes: 5), // Update every 5 minutes for demo
+        const Duration(minutes: 5), 
         (timer) => _updateLocation(),
       );
     }
@@ -84,14 +83,12 @@ class _TrackTruckState extends State<TrackTruck> {
       _isLoading = true;
     });
 
-    // Simulate API call delay
     Future.delayed(const Duration(seconds: 1), () {
       if (!mounted) return;
 
       final delivery = _deliveryDatabase[_currentTrackingId!];
       if (delivery == null) return;
 
-      // Update location with realistic progression
       if (_locationProgression.containsKey(_currentTrackingId!)) {
         final locations = _locationProgression[_currentTrackingId!]!;
         if (_updateCount < locations.length - 1) {
@@ -99,7 +96,6 @@ class _TrackTruckState extends State<TrackTruck> {
           delivery.currentLocation = locations[_updateCount];
           delivery.lastUpdated = DateTime.now();
         } else {
-          // Stop updates when reached destination
           _locationUpdateTimer?.cancel();
           delivery.status = 'Delivered';
           delivery.currentLocation = 'Delivered at ${delivery.dropLocation}';
@@ -426,3 +422,4 @@ class DeliveryInfo {
     required this.lastUpdated,
   });
 }
+//ready

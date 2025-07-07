@@ -7,7 +7,7 @@ import 'package:truxoo_partners/services/notification_service.dart';
 import 'onboarding_page.dart';
 import 'my_accounts_driver.dart';
 import 'history_driver.dart';
-import 'track_truck_driver_side.dart';
+import 'track_truck.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'license_image_screen.dart';
 import 'chat_screen.dart'; 
@@ -25,7 +25,7 @@ class DriverConstants {
   static const double largeScreenBreakpoint = 600;
   static const String defaultTruckNumber = 'OD02AB1234';
   static const double appBarHeightRatio = 0.08;
-  static const int demoBookingInterval = 45; // Added for demo timing
+  static const int demoBookingInterval = 45; 
 }
 
 enum BookingStatus { pending, accepted, denied, completed, cancelled }
@@ -492,10 +492,8 @@ class _DriverSideHomeState extends State<DriverSideHome> {
     try {
       await NotificationService.initialize();
       
-      // Set context for navigation
       NotificationService.setContext(context);
       
-      // Set callback for notification taps
       NotificationService.setNotificationTappedCallback((bookingId) {
         print('Notification tapped for booking: $bookingId');
         
@@ -1925,8 +1923,7 @@ class _DriverSideHomeState extends State<DriverSideHome> {
     Timer(const Duration(seconds: 4), () {
       try {
         overlayEntry.remove();
-      } catch (e) {
-        // Overlay already removed
+      } catch (e) {//
       }
     });
   }
@@ -2015,3 +2012,4 @@ class _DriverSideHomeState extends State<DriverSideHome> {
     return true;
   }
 }
+//ready

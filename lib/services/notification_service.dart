@@ -10,20 +10,17 @@ class NotificationService {
   
   static bool _isInitialized = false;
   static bool _hasPermission = false;
-  
-  // Add these static variables for navigation
+
   static BuildContext? _context;
   static Function(String)? _onNotificationTappedCallback;
   
   static bool get hasPermission => _hasPermission;
   static bool get isInitialized => _isInitialized;
 
-  // Add method to set context for navigation
   static void setContext(BuildContext context) {
     _context = context;
   }
 
-  // Add method to set callback
   static void setNotificationTappedCallback(Function(String) callback) {
     _onNotificationTappedCallback = callback;
   }
@@ -105,7 +102,6 @@ class NotificationService {
         icon: '@mipmap/ic_launcher',
         largeIcon: DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
         color: Color(0xFF2196F3),
-        // Simplified styling
         styleInformation: BigTextStyleInformation(
           'A new ride request is waiting for you. Tap to view details.',
           contentTitle: '🚗 You have a new ride!',
@@ -254,26 +250,24 @@ class NotificationService {
     }
   }
 
-  // Updated notification tap handler
   static void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
     
     if (payload != null && payload.startsWith('new_ride:')) {
       final bookingId = payload.substring('new_ride:'.length);
       print('Notification tapped for ride: $bookingId');
-      
-      // Navigate to home page
+
       if (_context != null) {
         Navigator.of(_context!).pushNamedAndRemoveUntil(
-          '/', // Assuming your home route is '/'
+          '/', //home route ta padiba
           (route) => false,
         );
       }
       
-      // Call callback if set
       if (_onNotificationTappedCallback != null) {
         _onNotificationTappedCallback!(bookingId);
       }
     }
   }
 }
+//ready

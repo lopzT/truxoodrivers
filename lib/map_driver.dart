@@ -131,19 +131,15 @@ void initState() {
   _rideId = _generateTrackingNumber();
   _calculateEstimatedEarnings();
   
-  // NO context-dependent calls here!
-  // Move them to didChangeDependencies
 }
 
 @override
 void didChangeDependencies() {
   super.didChangeDependencies();
   
-  // Only initialize once
   if (!_hasInitialized) {
     _hasInitialized = true;
     
-    // Now it's safe to call context-dependent methods
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadEnvironment();
       _initializeMap();
@@ -158,7 +154,6 @@ void didChangeDependencies() {
   }
 }
 
-  // Safe setState method
   void _safeSetState(VoidCallback fn) {
     if (mounted && !_isDisposed) {
       setState(fn);
@@ -173,7 +168,6 @@ void didChangeDependencies() {
   }
 
   void _clearTemporaryData() {
-    // Clear any cached/temporary data
     _otpInput = '';
     _sliderValue = 0.0;
     _distance = 0.0;
@@ -182,7 +176,6 @@ void didChangeDependencies() {
     _distanceToTarget = 0.0;
     _locationAccuracy = 0.0;
     
-    // Clear API key from memory (security)
     _googleMapsApiKey = null;
   }
 
@@ -235,46 +228,35 @@ void didChangeDependencies() {
     
     switch (state) {
       case AppLifecycleState.resumed:
-        // App is visible and responding to user input
         _getCurrentLocation();
         _checkNetworkStatus();
         
-        // Restart location stream with full accuracy if driver is active
         if (_isDriverOnline && _hasAcceptedBooking && !_isDisposed) {
           _startLocationStream();
         }
         break;
         
       case AppLifecycleState.inactive:
-        // App is inactive (transitioning, phone call, etc.)
-        // Don't stop location tracking completely, but reduce frequency
-        // This state is usually temporary (phone calls, notifications, etc.)
         break;
         
       case AppLifecycleState.paused:
-        // App is backgrounded but still running
-        // Reduce location accuracy to save battery when backgrounded
+        
         if (_positionStream != null) {
           _stopLocationStream();
-          // Restart with lower accuracy for background tracking
           _startBackgroundLocationTracking();
         }
         break;
         
       case AppLifecycleState.detached:
-        // App is being shut down
         _stopLocationStream();
         _cleanupResources();
         break;
         
       case AppLifecycleState.hidden:
-        // App is hidden (minimized or obscured)
-        // Similar to paused, but less aggressive
         break;
     }
   }
 
-  // Background location tracking with reduced accuracy
   void _startBackgroundLocationTracking() {
     if (!mounted || !_isDriverOnline || !_hasAcceptedBooking || _isDisposed) {
       return;
@@ -282,9 +264,9 @@ void didChangeDependencies() {
 
     try {
       LocationSettings backgroundSettings = LocationSettings(
-        accuracy: LocationAccuracy.low, // Lower accuracy for background
-        distanceFilter: 50, // Update only when moved 50 meters (vs 5-15m normally)
-        timeLimit: const Duration(seconds: 30), // Longer timeout
+        accuracy: LocationAccuracy.low, 
+        distanceFilter: 50, 
+        timeLimit: const Duration(seconds: 30), 
       );
 
       _positionStream = Geolocator.getPositionStream(
@@ -298,24 +280,19 @@ void didChangeDependencies() {
             _locationAccuracy = position.accuracy;
           });
 
-          // Only essential updates in background
           _updateDistanceToTarget();
           _checkIfAtPickup();
           
-          // Don't calculate routes in background to save battery/data
         },
         onError: (error) {
-          // Handle background location errors silently
         },
         cancelOnError: false,
       );
       
-    } catch (e) {
-      // Handle error silently in background mode
+    } catch (e) {//
     }
   }
 
-  // Clean up resources when app is being terminated
   void _cleanupResources() {
     _stopLocationStream();
     _markers.clear();
@@ -331,7 +308,6 @@ void didChangeDependencies() {
     _checkNetworkStatus();
   }
 
-  // Network connectivity check
   Future<void> _checkNetworkStatus() async {
     try {
       final response = await http.get(Uri.parse('https://www.google.com')).timeout(
@@ -370,7 +346,6 @@ void didChangeDependencies() {
   });
 }
 
-  // Google Geocoding API integration
   Future<LatLng?> _geocodeAddress(String address) async {
     if (!_isNetworkAvailable || _googleMapsApiKey == null || _googleMapsApiKey!.isEmpty || _isDisposed) {
       return null;
@@ -395,7 +370,7 @@ void didChangeDependencies() {
         }
       }
     } catch (e) {
-      // Handle geocoding error silently
+      //
     } finally {
       _httpClients.remove(client);
       client.close();
@@ -403,7 +378,6 @@ void didChangeDependencies() {
     return null;
   }
 
-  // Google Places API integration
   Future<Map<String, dynamic>?> _getPlaceDetails(String placeId) async {
     if (!_isNetworkAvailable || _googleMapsApiKey == null || _googleMapsApiKey!.isEmpty || _isDisposed) {
       return null;
@@ -428,7 +402,7 @@ void didChangeDependencies() {
         }
       }
     } catch (e) {
-      // Handle places API error silently
+      // 
     } finally {
       _httpClients.remove(client);
       client.close();
@@ -442,7 +416,7 @@ void didChangeDependencies() {
     }
     
     final client = http.Client();
-    _httpClients.add(client); // Track the client
+    _httpClients.add(client); 
     
     try {
       final String url = 'https://maps.googleapis.com/maps/api/directions/json'
@@ -462,8 +436,7 @@ void didChangeDependencies() {
         if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
           final route = data['routes'][0];
           final leg = route['legs'][0];
-          
-          // Extract polyline points
+
           final polylineString = route['overview_polyline']['points'];
           final List<LatLng> routePoints = _decodePolyline(polylineString);
           
@@ -475,13 +448,12 @@ void didChangeDependencies() {
             'polylinePoints': routePoints,
             'distance': leg['distance']['text'],
             'duration': leg['duration']['text'],
-            'durationValue': leg['duration']['value'], // in seconds
-            'distanceValue': leg['distance']['value'], // in meters
+            'durationValue': leg['duration']['value'], 
+            'distanceValue': leg['distance']['value'], 
             'trafficDuration': leg['duration_in_traffic']?['text'] ?? leg['duration']['text'],
             'trafficDurationValue': leg['duration_in_traffic']?['value'] ?? leg['duration']['value'],
           };
         } else {
-          // Handle API errors
           final status = data['status'];
           final errorMessage = data['error_message'] ?? 'Unknown API error';
           throw Exception('Directions API error: $status - $errorMessage');
@@ -490,9 +462,9 @@ void didChangeDependencies() {
         throw Exception('HTTP ${response.statusCode}: ${response.reasonPhrase}');
       }
     } on TimeoutException {
-      rethrow; // Let the calling method handle timeout
+      rethrow; 
     } on FormatException {
-      rethrow; // Let the calling method handle format errors
+      rethrow; 
     } catch (e) {
       throw Exception('Directions API request failed: $e');
     } finally {
@@ -501,7 +473,6 @@ void didChangeDependencies() {
     }
   }
 
-  // Decode polyline string from Google Directions API
   List<LatLng> _decodePolyline(String polylineString) {
     List<LatLng> points = [];
     int index = 0, len = polylineString.length;
@@ -533,7 +504,6 @@ void didChangeDependencies() {
   }
 
   void _startLocationStream() {
-  // Cancel any existing stream
   _positionStream?.cancel();
   
   if (!mounted || !_isDriverOnline || !_hasAcceptedBooking || _isDisposed) {
@@ -541,11 +511,10 @@ void didChangeDependencies() {
   }
 
   try {
-    // Configure location settings based on ride status
     LocationSettings locationSettings = LocationSettings(
       accuracy: _getLocationAccuracy(),
-      distanceFilter: _getDistanceFilter(), // Only update when moved this distance
-      timeLimit: const Duration(seconds: 15), // Timeout for each location request
+      distanceFilter: _getDistanceFilter(), 
+      timeLimit: const Duration(seconds: 15), 
     );
 
     _positionStream = Geolocator.getPositionStream(
@@ -554,7 +523,6 @@ void didChangeDependencies() {
       (Position position) {
         if (!mounted || _isDisposed) return;
         
-        // Store previous location for distance calculation
         final previousLocation = _currentLocation;
         
         _safeSetState(() {
@@ -562,22 +530,16 @@ void didChangeDependencies() {
           _locationAccuracy = position.accuracy;
           _updateMarkers();
         });
-
-        // Update distance calculations
         _updateDistanceToTarget();
         _checkIfAtPickup();
-
-        // Update camera if significant movement
         _updateCameraIfNeeded(previousLocation);
 
-        // Get route only if needed
         if (!_isOtpVerified && _isNetworkAvailable) {
           _getDirectionsRoute();
         } else if (_isOtpVerified) {
           _clearRoutes();
         }
 
-        // Show location accuracy warnings if needed
         _checkLocationAccuracy(position.accuracy);
       },
       onError: (error) {
@@ -585,11 +547,10 @@ void didChangeDependencies() {
           _handleLocationStreamError(error);
         }
       },
-      cancelOnError: false, // Keep stream alive even after errors
+      cancelOnError: false, 
     );
 
-    // REMOVE this line - it was causing the error:
-    // _showSuccessSnackbar('Location tracking started');
+
     
   } catch (e) {
     if (mounted && !_isDisposed) {
@@ -598,38 +559,35 @@ void didChangeDependencies() {
   }
 }
 
-  // Get location accuracy based on ride status
   LocationAccuracy _getLocationAccuracy() {
     switch (_rideStatus) {
       case RideStatus.atPickup:
       case RideStatus.inProgress:
-        return LocationAccuracy.best; // Highest accuracy when active
+        return LocationAccuracy.best; 
       case RideStatus.enRoute:
-        return LocationAccuracy.high; // High accuracy when driving
+        return LocationAccuracy.high; 
       default:
-        return LocationAccuracy.medium; // Normal accuracy otherwise
+        return LocationAccuracy.medium; 
     }
   }
 
-  // Get distance filter based on ride status  
   int _getDistanceFilter() {
     switch (_rideStatus) {
       case RideStatus.atPickup:
-        return 3; // Very sensitive when at pickup (3 meters)
+        return 3; 
       case RideStatus.inProgress:
-        return 5; // Sensitive during ride (5 meters)
+        return 5; 
       case RideStatus.enRoute:
         if (_distanceToTarget < 500) {
-          return 5; // More sensitive when close to pickup
+          return 5; 
         } else {
-          return 15; // Less sensitive when far from pickup (15 meters)
+          return 15; 
         }
       default:
-        return 10; // Default filter (10 meters)
+        return 10; 
     }
   }
 
-  // Handle location stream errors
   void _handleLocationStreamError(dynamic error) {
     if (error is LocationServiceDisabledException) {
       _showErrorSnackbar('Location services are disabled. Please enable them.');
@@ -639,7 +597,6 @@ void didChangeDependencies() {
       _showPermissionDeniedDialog();
     } else if (error is TimeoutException) {
       _showWarningSnackbar('Location update timed out. Retrying...');
-      // Automatically restart stream after timeout
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && !_isDisposed) _startLocationStream();
       });
@@ -648,11 +605,8 @@ void didChangeDependencies() {
     }
   }
 
-  // Update camera only if moved significantly
   void _updateCameraIfNeeded(LatLng previousLocation) {
     if (_mapController == null) return;
-    
-    // Calculate distance moved
     double distanceMoved = Geolocator.distanceBetween(
       previousLocation.latitude,
       previousLocation.longitude,
@@ -660,7 +614,7 @@ void didChangeDependencies() {
       _currentLocation.longitude,
     );
     
-    // Only update camera if moved more than 20 meters or if at pickup
+
     if (distanceMoved > 20 || _rideStatus == RideStatus.atPickup) {
       _mapController!.animateCamera(
         CameraUpdate.newLatLng(_currentLocation),
@@ -668,9 +622,8 @@ void didChangeDependencies() {
     }
   }
 
-  // Check location accuracy and warn user if too low
   void _checkLocationAccuracy(double accuracy) {
-    if (accuracy > 50) { // More than 50 meters accuracy
+    if (accuracy > 50) { 
       _showWarningSnackbar('GPS accuracy is low (${accuracy.toInt()}m). Move to open area for better signal.');
     }
   }
@@ -742,7 +695,6 @@ void didChangeDependencies() {
       _distanceToTarget = distanceInMeters;
     });
     
-    // Check if within 100 meters of pickup location
     if (distanceInMeters <= 100 && !_isAtPickup) {
       _safeSetState(() {
         _isAtPickup = true;
@@ -754,7 +706,6 @@ void didChangeDependencies() {
 
   Future<void> _checkLocationPermission() async {
     try {
-      // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (!mounted) return;
@@ -762,16 +713,12 @@ void didChangeDependencies() {
         return;
       }
 
-      // Check current permission status
       LocationPermission permission = await Geolocator.checkPermission();
-      
-      // If permission is already granted, return
       if (permission == LocationPermission.always || 
           permission == LocationPermission.whileInUse) {
         return;
       }
-      
-      // Handle denied permissions
+
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         
@@ -782,8 +729,7 @@ void didChangeDependencies() {
           return;
         }
       }
-      
-      // Handle permanently denied
+
       if (permission == LocationPermission.deniedForever) {
         if (!mounted) return;
         await _showPermanentlyDeniedDialog();
@@ -818,7 +764,6 @@ void didChangeDependencies() {
         _rideStatus = RideStatus.inProgress;
       });
       _updateMarkers();
-      // Don't show routes when OTP is verified (after pickup)
       _clearRoutes();
     }
   }
@@ -923,46 +868,38 @@ void didChangeDependencies() {
   }
 
   Future<void> _getCurrentLocation() async {
-    if (!mounted || _isDisposed) return; // Check if widget is still mounted
+    if (!mounted || _isDisposed) return; 
     
     _safeSetState(() {
       _isLoadingLocation = true;
     });
 
     try {
-      // Step 1: Check if location services are enabled on device
       if (!await Geolocator.isLocationServiceEnabled()) {
         _showLocationServiceDialog();
         return;
       }
-
-      // Step 2: Check app permissions
       LocationPermission permission = await Geolocator.checkPermission();
-      
-      // Step 3: Request permission if denied
+
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        
-        // Still denied after request
+
         if (permission == LocationPermission.denied) {
           _showPermissionDeniedDialog();
           return;
         }
       }
 
-      // Step 4: Handle permanently denied
       if (permission == LocationPermission.deniedForever) {
         _showPermanentlyDeniedDialog();
         return;
       }
 
-      // Step 5: Get location (only if we have permission)
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10), // Add timeout
+        timeLimit: const Duration(seconds: 10), 
       );
 
-      // Check if widget is still mounted before updating state
       if (!mounted || _isDisposed) return;
 
       _safeSetState(() {
@@ -971,15 +908,12 @@ void didChangeDependencies() {
         _isLoadingLocation = false;
       });
 
-      // Only get routes if driver hasn't reached pickup yet AND we have network + API key
       if (_isDriverOnline && _hasAcceptedBooking && !_isOtpVerified && _isNetworkAvailable) {
         _getDirectionsRoute();
       } else if (_isOtpVerified) {
-        // Clear routes after pickup
         _clearRoutes();
       }
 
-      // Update camera
       if (_mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(_currentLocation, 15),
@@ -995,7 +929,6 @@ void didChangeDependencies() {
     } catch (e) {
       _showLocationError('Unable to get your location: ${e.toString()}');
     } finally {
-      // Always stop loading, even if error occurs
       if (mounted && !_isDisposed) {
         _safeSetState(() {
           _isLoadingLocation = false;
@@ -1024,24 +957,19 @@ void didChangeDependencies() {
 }
 
   Future<void> _getDirectionsRoute() async {
-    // Only proceed if we have network, API key, and haven't verified OTP
     if (_isDisposed || !_isNetworkAvailable || _googleMapsApiKey == null || _googleMapsApiKey!.isEmpty || _isOtpVerified) {
       return;
     }
     
     try {
       _safeSetState(() => _isLoadingRoute = true);
-      
-      // Only show route to pickup location, not destination
       final routeData = await _getDirectionsWithETA(_currentLocation, _pickupLocation)
-          .timeout(const Duration(seconds: 15)); // Add timeout
-      
-      // Check if widget is still mounted before updating state
+          .timeout(const Duration(seconds: 15)); 
       if (routeData != null && mounted && !_isDisposed) {
         _safeSetState(() {
           _polylineCoordinates = routeData['polylinePoints'];
           _distance = routeData['distanceValue'].toDouble();
-          _estimatedTime = routeData['trafficDuration']; // Use traffic-aware duration
+          _estimatedTime = routeData['trafficDuration']; 
           
           _calculateEstimatedEarnings();
           
@@ -1055,8 +983,7 @@ void didChangeDependencies() {
             ),
           );
         });
-        
-        // Show success feedback for first route calculation
+
         if (_polylineCoordinates.isNotEmpty) {
           _showSuccessSnackbar('Route calculated successfully!');
         }
@@ -1168,8 +1095,7 @@ void didChangeDependencies() {
   void _calculateEstimatedEarnings() {
     double fare = 8000.00;
     fare += (_distance / 1000) * 10;
-    
-    // Parse estimated time if it's a string (from API)
+
     if (_estimatedTime.isNotEmpty) {
       final timeInMinutes = _parseTimeString(_estimatedTime);
       fare += timeInMinutes * 2;
@@ -1181,7 +1107,6 @@ void didChangeDependencies() {
   }
   
   double _parseTimeString(String timeString) {
-    // Parse Google's time format (e.g., "15 mins", "1 hour 5 mins")
     double totalMinutes = 0;
     
     final hourMatch = RegExp(r'(\d+)\s*hour').firstMatch(timeString.toLowerCase());
@@ -1209,7 +1134,6 @@ void didChangeDependencies() {
     
     if (_isDriverOnline && _hasAcceptedBooking) {
       if (!_isOtpVerified) {
-        // Show pickup marker only until OTP is verified
         _markers.add(
           Marker(
             markerId: const MarkerId('pickupLocation'),
@@ -1231,8 +1155,7 @@ void didChangeDependencies() {
       });
       _saveOtpVerificationState();
       _updateMarkers();
-      
-      // Clear routes after OTP verification
+
       _clearRoutes();
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1418,37 +1341,30 @@ void didChangeDependencies() {
 
   @override
 void dispose() {
-  // 1. Remove system observers
+
   WidgetsBinding.instance.removeObserver(this);
   BackButtonInterceptor.remove(_backButtonInterceptor);
-  
-  // 2. Cancel location tracking
+
   _stopLocationStream();
   _positionStream?.cancel();
   _positionStream = null;
-  
-  // 3. Dispose map controller
+
   _mapController?.dispose();
   _mapController = null;
-  
-  // 4. Clear all collections to free memory
+
   _markers.clear();
   _polylines.clear();
   _polylineCoordinates.clear();
   _rideHistory.clear();
   _monthlyEarnings.clear();
-  
-  // 5. Cancel any pending HTTP requests
+
   _cancelPendingRequests();
-  
-  // 6. Clear cached data
+
   _clearTemporaryData();
-  
-  // 7. Reset state variables to prevent callbacks
+
   _isDisposed = true;
-  _hasInitialized = false; // Add this line
-  
-  // 8. Call super.dispose() last
+  _hasInitialized = false; 
+
   super.dispose();
 }
 
@@ -1513,8 +1429,7 @@ void dispose() {
             const Center(
               child: CircularProgressIndicator(),
             ),
-          
-          // Network status indicator
+
           if (!_isNetworkAvailable)
             Positioned(
               top: 16,
@@ -1546,8 +1461,7 @@ void dispose() {
                 ),
               ),
             ),
-          
-          // Location button
+
           Positioned(
             right: 16,
             bottom: isLargeScreen ? 40 : 30,
@@ -1571,7 +1485,6 @@ void dispose() {
           children: [
             if (!_isOtpVerified) 
               if (_isAtPickup)
-                // OTP Input UI
                 Container(
                   width: double.infinity,
                   decoration: const BoxDecoration(
@@ -1741,7 +1654,6 @@ void dispose() {
                   ),
                 )
               else
-                // Navigation to pickup UI
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -1857,7 +1769,6 @@ void dispose() {
                   ),
                 )
             else
-              // Slide to end ride UI (when OTP verified)
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.symmetric(vertical: isLargeScreen ? 12.0 : 8.0),
@@ -2023,3 +1934,4 @@ void dispose() {
     );
   }
 }
+//ready

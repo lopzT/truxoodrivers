@@ -20,27 +20,20 @@ class ChatMessage {
 
 enum MessageType { text, image }
 
-// ChatRepository for persistent storage
 class ChatRepository {
-  // Simulate database storage (replace with actual SQLite/Hive implementation)
   static final Map<String, List<ChatMessage>> _localStorage = {};
   
   Future<void> saveMessage(ChatMessage message, String conversationId) async {
-    // Simulate network/database delay
+
     await Future.delayed(const Duration(milliseconds: 100));
     
     if (!_localStorage.containsKey(conversationId)) {
       _localStorage[conversationId] = [];
     }
     _localStorage[conversationId]!.add(message);
-    
-    // Here you would save to actual database:
-    // final db = await database;
-    // await db.insert('messages', message.toMap());
   }
   
   Future<List<ChatMessage>> loadMessages(String conversationId, {int limit = 20}) async {
-    // Simulate network/database delay
     await Future.delayed(const Duration(milliseconds: 200));
     
     if (!_localStorage.containsKey(conversationId)) {
@@ -49,7 +42,6 @@ class ChatRepository {
     
     final allMessages = _localStorage[conversationId]!;
     
-    // Return the most recent messages up to the limit
     if (allMessages.length <= limit) {
       return List.from(allMessages);
     } else {
@@ -61,7 +53,6 @@ class ChatRepository {
     required DateTime beforeTimestamp,
     int limit = 20,
   }) async {
-    // Simulate network/database delay
     await Future.delayed(const Duration(milliseconds: 300));
     
     if (!_localStorage.containsKey(conversationId)) {
@@ -69,13 +60,11 @@ class ChatRepository {
     }
     
     final allMessages = _localStorage[conversationId]!;
-    
-    // Find messages before the given timestamp
+
     final olderMessages = allMessages
         .where((message) => message.timestamp.isBefore(beforeTimestamp))
         .toList();
     
-    // Return the most recent of the older messages
     if (olderMessages.length <= limit) {
       return olderMessages;
     } else {
@@ -128,9 +117,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   bool _backButtonInterceptor(bool stopDefaultButtonEvent, RouteInfo info) {
-    // Navigate back to the previous screen when physical back button is pressed
     Navigator.of(context).pop();
-    return true; // Prevent default back button behavior
+    return true; 
   }
 
   Future<void> _loadInitialMessages() async {
@@ -167,16 +155,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessageList() {
     return ListView.builder(
-      reverse: true, // Start from bottom
+      reverse: true, 
       controller: _scrollController,
       itemCount: _messages.length + (_hasMoreMessages ? 1 : 0),
       itemBuilder: (context, index) {
-        // Show loading indicator at top when loading more
         if (index == _messages.length) {
           return _buildLoadingIndicator();
         }
-        
-        // Check if we need to load more messages
+
         if (index >= _messages.length - 5 && !_isLoadingMore && _hasMoreMessages) {
           _loadMoreMessages();
         }
@@ -209,7 +195,6 @@ class _ChatScreenState extends State<ChatScreen> {
       type: type,
     );
 
-    // Save to repository
     await _repository.saveMessage(message, _conversationId);
 
     setState(() {
@@ -527,3 +512,4 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 }
+//ready

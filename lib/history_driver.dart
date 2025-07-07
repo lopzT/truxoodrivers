@@ -539,7 +539,6 @@ Widget _buildSimpleEarningsChart(bool isLargeScreen) {
                   children: [
                     ElevatedButton.icon(
                       onPressed: () {
-                        // Download invoice functionality
                         Navigator.of(context).pop();
                       },
                       icon: const Icon(Icons.download),
@@ -551,7 +550,7 @@ Widget _buildSimpleEarningsChart(bool isLargeScreen) {
                     ),
                     ElevatedButton.icon(
                       onPressed: () {
-                        // Share ride details functionality
+                      
                         Navigator.of(context).pop();
                       },
                       icon: const Icon(Icons.share),
@@ -601,3 +600,4 @@ Widget _buildSimpleEarningsChart(bool isLargeScreen) {
     );
   }
 }
+//ready

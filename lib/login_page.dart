@@ -10,7 +10,6 @@ class Login extends StatefulWidget {
 }
 
 class _LoginState extends State<Login> with TickerProviderStateMixin {
-  // Constants
   static const Duration _animationDuration = Duration(milliseconds: 800);
   static const Duration _staggerDelay = Duration(milliseconds: 200);
   static const Duration _transitionDuration = Duration(milliseconds: 500);
@@ -20,21 +19,21 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   static const int _phoneNumberLength = 10;
   static const String _countryCode = '+91';
   
-  // Controllers and Focus
+
   late final TextEditingController _contactNumberController;
   late final FocusNode _phoneFocusNode;
   
-  // Animation Controllers
+
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _buttonController;
   
-  // Animations
+
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _buttonScaleAnimation;
   
-  // State variables
+
   bool _isLoading = false;
   bool _isValidNumber = false;
 
@@ -45,7 +44,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     _initializeAnimations();
     _startAnimations();
     
-    // Auto-focus after animation
+
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (mounted) {
         _phoneFocusNode.requestFocus();
@@ -57,7 +56,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     _contactNumberController = TextEditingController();
     _phoneFocusNode = FocusNode();
     
-    // Listen to input changes for real-time validation
+
     _contactNumberController.addListener(_validatePhoneNumber);
   }
 
@@ -135,7 +134,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // Responsive calculations
   Map<String, double> _getResponsiveSizes(double screenWidth, double screenHeight) {
     final isLargeScreen = screenWidth > _largeScreenBreakpoint;
     
@@ -276,14 +274,13 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                 enableSuggestions: false,
                 autocorrect: false,
                 keyboardType: TextInputType.phone,
-                maxLength: 11, // ← Changed from _phoneNumberLength to 11 (to allow space)
+                maxLength: 11, 
                 style: TextStyle(
                   fontSize: sizes['inputFontSize'],
                   fontWeight: FontWeight.w500,
                 ),
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
-                  // ← Removed LengthLimitingTextInputFormatter since our custom formatter handles it
                   _PhoneNumberFormatter(),
                 ],
                 decoration: InputDecoration(
@@ -412,7 +409,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
       return;
     }
 
-    // Additional validation for Indian mobile numbers
     if (!RegExp(r'^[6-9]\d{9}$').hasMatch(contact)) {
       _showErrorSnackBar('Please enter a valid Indian mobile number');
       return;
@@ -422,13 +418,11 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     setState(() => _isLoading = true);
 
     try {
-      // Simulate API call for OTP sending
       await Future.delayed(const Duration(milliseconds: 1500));
       
       if (mounted) {
         setState(() => _isLoading = false);
         
-        // Success haptic feedback
         HapticFeedback.mediumImpact();
         
         Navigator.push(
@@ -483,17 +477,14 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   }
 }
 
-// Custom formatter for phone number input
 class _PhoneNumberFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    // Remove any non-digit characters
+
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
-    
-    // Limit to 10 digits
     if (digitsOnly.length > 10) {
       final limitedDigits = digitsOnly.substring(0, 10);
       final formattedText = _formatPhoneNumber(limitedDigits);
@@ -537,3 +528,4 @@ class _PhoneNumberFormatter extends TextInputFormatter {
     return '$firstPart $secondPart';
   }
 }
+//ready

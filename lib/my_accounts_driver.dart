@@ -218,10 +218,9 @@ Future<void> _showUnsavedChangesDialog() async {
           TextButton(
             child: const Text('Save'),
             onPressed: () {
-              Navigator.of(dialogContext).pop();  // First close the dialog
+              Navigator.of(dialogContext).pop();   
               if (_isEditingProfile) _saveProfileChanges();
               if (_isEditingTruck) _saveTruckChanges();
-              // Then navigate back with updates
               Navigator.of(context).pop({
                 'selectedIndex': 0,
                 'updatedProfile': true,
@@ -264,7 +263,6 @@ Future<void> _showUnsavedChangesDialog() async {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Profile Section
               Card(
                 elevation: 4,
                 shape: RoundedRectangleBorder(
@@ -376,8 +374,6 @@ Future<void> _showUnsavedChangesDialog() async {
               ),
               
               SizedBox(height: isLargeScreen ? 24 : 16),
-              
-              // Truck Details Section
               Card(
                 elevation: 4,
                 shape: RoundedRectangleBorder(
@@ -443,8 +439,6 @@ Future<void> _showUnsavedChangesDialog() async {
               ),
               
               SizedBox(height: isLargeScreen ? 24 : 16),
-              
-              // License Details Section
               Card(
                 elevation: 4,
                 shape: RoundedRectangleBorder(
@@ -481,7 +475,6 @@ Future<void> _showUnsavedChangesDialog() async {
                       Center(
                         child: ElevatedButton.icon(
                           onPressed: () {
-                            // Navigate to license image screen
                           },
                           icon: const Icon(Icons.remove_red_eye),
                           label: const Text('View License'),
@@ -501,8 +494,6 @@ Future<void> _showUnsavedChangesDialog() async {
               ),
               
               SizedBox(height: isLargeScreen ? 24 : 16),
-              
-              // Account Actions Section
               Card(
                 elevation: 4,
                 shape: RoundedRectangleBorder(
@@ -526,7 +517,7 @@ Future<void> _showUnsavedChangesDialog() async {
                         title: const Text('Change Password'),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          // Navigate to change password screen
+                          //change password functionta karini karibi
                         },
                       ),
                       const Divider(),
@@ -535,7 +526,7 @@ Future<void> _showUnsavedChangesDialog() async {
                         title: const Text('Contact Support'),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          // Navigate to support screen or launch phone/email
+                          // eita bhi 
                         },
                       ),
                       const Divider(),
@@ -544,7 +535,6 @@ Future<void> _showUnsavedChangesDialog() async {
                         title: const Text('Logout'),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          // Show logout confirmation dialog
                           _showLogoutConfirmationDialog(context, isLargeScreen);
                         },
                       ),
@@ -554,7 +544,6 @@ Future<void> _showUnsavedChangesDialog() async {
                         title: const Text('Delete Account'),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          // Show delete account confirmation dialog
                           _showDeleteAccountConfirmationDialog(context, isLargeScreen);
                         },
                       ),
@@ -565,7 +554,6 @@ Future<void> _showUnsavedChangesDialog() async {
               
               SizedBox(height: isLargeScreen ? 24 : 16),
               
-              // App Version
               Center(
                 child: Text(
                   'App Version: 1.0.0',
@@ -672,10 +660,8 @@ Future<void> _showUnsavedChangesDialog() async {
               child: const Text('Logout', style: TextStyle(color: Colors.red)),
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                // Perform logout action
-                // Navigate to login screen
                 Navigator.of(context).pushNamedAndRemoveUntil(
-                  '/login', // Replace with your login route
+                  '/login', 
                   (Route<dynamic> route) => false,
                 );
               },
@@ -718,9 +704,6 @@ Future<void> _showUnsavedChangesDialog() async {
   }
   
   void _performAccountDeletion() {
-    // Here you would call your API to delete the account
-    // For now, we'll just show a success message and navigate to login
-    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Account deleted successfully'),
@@ -728,12 +711,12 @@ Future<void> _showUnsavedChangesDialog() async {
       ),
     );
     
-    // Navigate to login screen
     Future.delayed(const Duration(seconds: 2), () {
       Navigator.of(context).pushNamedAndRemoveUntil(
-        '/login', // Replace with your login route
+        '/login', 
         (Route<dynamic> route) => false,
       );
     });
   }
 }
+//ready
