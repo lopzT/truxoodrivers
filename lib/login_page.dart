@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'otp_page.dart';
+import 'driver_sign_up_page.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -168,6 +169,8 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
               SizedBox(height: sizes['buttonSpacing']!),
               _buildNextButton(screenWidth, sizes),
               SizedBox(height: screenHeight * 0.03),
+              _buildSignUpLink(sizes),
+              SizedBox(height: screenHeight * 0.02),
             ],
           ),
         ),
@@ -401,6 +404,70 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildSignUpLink(Map<String, double> sizes) {
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 1400),
+      tween: Tween(begin: 0.0, end: 1.0),
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 10 * (1 - value)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  "Don't already have an account? ",
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: const Color(0xFF5F5353),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    Navigator.push(
+                      context,
+                      PageRouteBuilder(
+                        pageBuilder: (context, animation, secondaryAnimation) => 
+                            const DriverRegistrationPage(),
+                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0.1, 0),
+                                end: Offset.zero,
+                              ).animate(CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeOutCubic,
+                              )),
+                              child: child,
+                            ),
+                          );
+                        },
+                        transitionDuration: _transitionDuration,
+                      ),
+                    );
+                  },
+                  child: Text(
+                    "Sign up here",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _handleNext() async {
     final contact = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
     
@@ -528,4 +595,3 @@ class _PhoneNumberFormatter extends TextInputFormatter {
     return '$firstPart $secondPart';
   }
 }
-//ready
