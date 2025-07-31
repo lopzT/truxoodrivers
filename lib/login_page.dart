@@ -1,7 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'otp_page.dart';
 import 'driver_sign_up_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
+
+class Config {
+  static const bool isDev = kDebugMode;
+  static const String devBaseUrl = 'http://10.0.2.2:3000';
+  static const String productionBaseUrl = 'https://api.truxoo.com';
+  
+  static String get baseUrl => isDev ? devBaseUrl : productionBaseUrl;
+}
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -19,21 +32,16 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   static const double _horizontalPaddingRatio = 0.05;
   static const int _phoneNumberLength = 10;
   static const String _countryCode = '+91';
-  
 
   late final TextEditingController _contactNumberController;
   late final FocusNode _phoneFocusNode;
-  
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _buttonController;
-  
-
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
   late Animation<double> _buttonScaleAnimation;
-  
 
   bool _isLoading = false;
   bool _isValidNumber = false;
@@ -44,7 +52,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     _initializeControllers();
     _initializeAnimations();
     _startAnimations();
-    
 
     Future.delayed(const Duration(milliseconds: 1000), () {
       if (mounted) {
@@ -56,8 +63,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   void _initializeControllers() {
     _contactNumberController = TextEditingController();
     _phoneFocusNode = FocusNode();
-    
-
     _contactNumberController.addListener(_validatePhoneNumber);
   }
 
@@ -66,12 +71,12 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
       duration: _animationDuration,
       vsync: this,
     );
-    
+
     _slideController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
-    
+
     _buttonController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
@@ -98,13 +103,13 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
 
   void _startAnimations() {
     _fadeController.forward();
-    
+
     Future.delayed(_staggerDelay, () {
       if (mounted) {
         _slideController.forward();
       }
     });
-    
+
     Future.delayed(const Duration(milliseconds: 600), () {
       if (mounted) {
         _buttonController.forward();
@@ -114,9 +119,9 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
 
   void _validatePhoneNumber() {
     final phoneNumber = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
-    final isValid = phoneNumber.length == _phoneNumberLength && 
-                   RegExp(r'^[6-9]\d{9}$').hasMatch(phoneNumber);
-    
+    final isValid = phoneNumber.length == _phoneNumberLength &&
+        RegExp(r'^[6-9]\d{9}$').hasMatch(phoneNumber);
+
     if (_isValidNumber != isValid) {
       setState(() {
         _isValidNumber = isValid;
@@ -137,7 +142,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
 
   Map<String, double> _getResponsiveSizes(double screenWidth, double screenHeight) {
     final isLargeScreen = screenWidth > _largeScreenBreakpoint;
-    
     return {
       'titleFontSize': isLargeScreen ? 42.0 : 36.0,
       'subtitleFontSize': isLargeScreen ? 14.0 : 12.0,
@@ -150,12 +154,154 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     };
   }
 
+  Future<bool> sendPhoneNumberToBackend(String phoneNumber) async {
+    const int maxRetries = 3;
+    const Duration baseDelay = Duration(seconds: 1);
+    
+    final url = Uri.parse('${Config.baseUrl}/api/send-otp');
+    
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        debugPrint('Sending OTP request (attempt ${attempt + 1}/$maxRetries) to: $url');
+        
+        final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'TruxooDriver/1.0',
+          },
+          body: jsonEncode({'phone': phoneNumber}),
+        ).timeout(const Duration(seconds: 15));
+        
+        debugPrint('Response status: ${response.statusCode}, body: ${response.body}');
+        
+        if (response.statusCode == 200) {
+          return true;
+        } else if (response.statusCode == 429) {
+          _showErrorSnackBar('Too many requests. Please wait a moment.');
+          return false;
+        } else if (response.statusCode >= 400 && response.statusCode < 500) {
+          _showErrorSnackBar('Invalid phone number or request.');
+          return false;
+        } else if (response.statusCode >= 500) {
+          if (attempt < maxRetries - 1) {
+            await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
+            continue;
+          } else {
+            _showErrorSnackBar('Server error. Please try again later.');
+            return false;
+          }
+        }
+        
+      } on SocketException catch (e) {
+        debugPrint('Network error (attempt ${attempt + 1}): $e');
+        if (attempt < maxRetries - 1) {
+          await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
+          continue;
+        } else {
+          _showErrorSnackBar('No internet connection. Please check your network.');
+          return false;
+        }
+      } on TimeoutException catch (e) {
+        debugPrint('Timeout error (attempt ${attempt + 1}): $e');
+        if (attempt < maxRetries - 1) {
+          await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
+          continue;
+        } else {
+          _showErrorSnackBar('Request timeout. Please try again.');
+          return false;
+        }
+      } catch (e) {
+        debugPrint('Unexpected error (attempt ${attempt + 1}): $e');
+        if (attempt < maxRetries - 1) {
+          await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
+          continue;
+        } else {
+          _showErrorSnackBar('Failed to send OTP. Please try again.');
+          return false;
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  void _handleNext() async {
+    final contact = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
+
+    if (!_isValidNumber || contact.length != _phoneNumberLength) {
+      _showErrorSnackBar('Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(contact)) {
+      _showErrorSnackBar('Please enter a valid Indian mobile number');
+      return;
+    }
+
+    HapticFeedback.lightImpact();
+    setState(() => _isLoading = true);
+
+    final success = await sendPhoneNumberToBackend(contact);
+
+    setState(() => _isLoading = false);
+
+    if (!success) {
+      return;
+    }
+
+    if (mounted) {
+      HapticFeedback.mediumImpact();
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              OtpPage(phoneNumber: contact),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeOutCubic,
+                )),
+                child: child,
+              ),
+            );
+          },
+          transitionDuration: _transitionDuration,
+        ),
+      );
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        margin: EdgeInsets.symmetric(
+          horizontal: MediaQuery.of(context).size.width * 0.05,
+          vertical: 16,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     final sizes = _getResponsiveSizes(screenWidth, screenHeight);
-    
+
     return Scaffold(
       appBar: _buildAppBar(sizes),
       body: FadeTransition(
@@ -184,12 +330,12 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
       child: AppBar(
         leading: IconButton(
           icon: Icon(
-            Icons.arrow_back, 
+            Icons.arrow_back,
             size: sizes['appBarHeight']! > 55 ? 28 : 24,
           ),
           onPressed: () {
             HapticFeedback.lightImpact();
-            Navigator.of(context).pop(); 
+            Navigator.of(context).pop();
           },
         ),
         elevation: 0,
@@ -259,102 +405,102 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   }
 
   Widget _buildPhoneInput(double screenWidth, Map<String, double> sizes) {
-  return SlideTransition(
-    position: _slideAnimation,
-    child: SizedBox(
-      width: screenWidth * _contentWidthRatio,
-      child: TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 800),
-        tween: Tween(begin: 0.0, end: 1.0),
-        builder: (context, value, child) {
-          return Transform.scale(
-            scale: 0.95 + (value * 0.05),
-            child: Opacity(
-              opacity: value,
-              child: TextField(
-                controller: _contactNumberController,
-                focusNode: _phoneFocusNode,
-                enableSuggestions: false,
-                autocorrect: false,
-                keyboardType: TextInputType.phone,
-                maxLength: 11, 
-                style: TextStyle(
-                  fontSize: sizes['inputFontSize'],
-                  fontWeight: FontWeight.w500,
-                ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  _PhoneNumberFormatter(),
-                ],
-                decoration: InputDecoration(
-                  counterText: '',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.grey[300]!,
-                      width: 1.5,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: _isValidNumber ? Colors.green : Colors.blue,
-                      width: 2,
-                    ),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: _isValidNumber ? Colors.green[300]! : Colors.grey[300]!,
-                      width: 1.5,
-                    ),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Colors.red,
-                      width: 2,
-                    ),
-                  ),
-                  prefixText: '$_countryCode ',
-                  prefixStyle: TextStyle(
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w600,
+    return SlideTransition(
+      position: _slideAnimation,
+      child: SizedBox(
+        width: screenWidth * _contentWidthRatio,
+        child: TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 800),
+          tween: Tween(begin: 0.0, end: 1.0),
+          builder: (context, value, child) {
+            return Transform.scale(
+              scale: 0.95 + (value * 0.05),
+              child: Opacity(
+                opacity: value,
+                child: TextField(
+                  controller: _contactNumberController,
+                  focusNode: _phoneFocusNode,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 11, 
+                  style: TextStyle(
                     fontSize: sizes['inputFontSize'],
+                    fontWeight: FontWeight.w500,
                   ),
-                  hintText: 'Enter your phone number',
-                  hintStyle: TextStyle(
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w400,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    _PhoneNumberFormatter(),
+                  ],
+                  decoration: InputDecoration(
+                    counterText: '',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Colors.grey[300]!,
+                        width: 1.5,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: _isValidNumber ? Colors.green : Colors.blue,
+                        width: 2,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: _isValidNumber ? Colors.green[300]! : Colors.grey[300]!,
+                        width: 1.5,
+                      ),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.red,
+                        width: 2,
+                      ),
+                    ),
+                    prefixText: '$_countryCode ',
+                    prefixStyle: TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                      fontSize: sizes['inputFontSize'],
+                    ),
+                    hintText: 'Enter your phone number',
+                    hintStyle: TextStyle(
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w400,
+                    ),
+                    contentPadding: EdgeInsets.symmetric(
+                      vertical: sizes['inputFontSize']! > 17 ? 16 : 12,
+                      horizontal: 16,
+                    ),
+                    suffixIcon: _contactNumberController.text.isNotEmpty
+                        ? AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: Icon(
+                              _isValidNumber ? Icons.check_circle : Icons.error,
+                              color: _isValidNumber ? Colors.green : Colors.red,
+                              key: ValueKey(_isValidNumber),
+                            ),
+                          )
+                        : null,
                   ),
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: sizes['inputFontSize']! > 17 ? 16 : 12,
-                    horizontal: 16,
-                  ),
-                  suffixIcon: _contactNumberController.text.isNotEmpty
-                      ? AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(
-                            _isValidNumber ? Icons.check_circle : Icons.error,
-                            color: _isValidNumber ? Colors.green : Colors.red,
-                            key: ValueKey(_isValidNumber),
-                          ),
-                        )
-                      : null,
+                  onChanged: (value) {
+                    if (value.isNotEmpty) {
+                      HapticFeedback.selectionClick();
+                    }
+                  },
                 ),
-                onChanged: (value) {
-                  if (value.isNotEmpty) {
-                    HapticFeedback.selectionClick();
-                  }
-                },
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildNextButton(double screenWidth, Map<String, double> sizes) {
     return ScaleTransition(
@@ -467,81 +613,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
       },
     );
   }
-
-  void _handleNext() async {
-    final contact = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
-    
-    if (!_isValidNumber || contact.length != _phoneNumberLength) {
-      _showErrorSnackBar('Please enter a valid 10-digit phone number');
-      return;
-    }
-
-    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(contact)) {
-      _showErrorSnackBar('Please enter a valid Indian mobile number');
-      return;
-    }
-
-    HapticFeedback.lightImpact();
-    setState(() => _isLoading = true);
-
-    try {
-      await Future.delayed(const Duration(milliseconds: 1500));
-      
-      if (mounted) {
-        setState(() => _isLoading = false);
-        
-        HapticFeedback.mediumImpact();
-        
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => 
-                OtpPage(phoneNumber: contact),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.1, 0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  )),
-                  child: child,
-                ),
-              );
-            },
-            transitionDuration: _transitionDuration,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showErrorSnackBar('Failed to send OTP. Please try again.');
-      }
-    }
-  }
-
-  void _showErrorSnackBar(String message) {
-    HapticFeedback.heavyImpact();
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        margin: EdgeInsets.symmetric(
-          horizontal: MediaQuery.of(context).size.width * 0.05,
-          vertical: 16,
-        ),
-      ),
-    );
-  }
 }
 
 class _PhoneNumberFormatter extends TextInputFormatter {
@@ -560,23 +631,23 @@ class _PhoneNumberFormatter extends TextInputFormatter {
         selection: TextSelection.collapsed(offset: formattedText.length),
       );
     }
-    
+
     final formattedText = _formatPhoneNumber(digitsOnly);
-    
+
     int cursorPosition = formattedText.length;
     if (newValue.selection.baseOffset < newValue.text.length) {
       final digitsBefore = newValue.text
           .substring(0, newValue.selection.baseOffset)
           .replaceAll(RegExp(r'[^\d]'), '')
           .length;
-      
+
       if (digitsBefore <= 5) {
         cursorPosition = digitsBefore;
       } else {
         cursorPosition = digitsBefore + 1; 
       }
     }
-    
+
     return TextEditingValue(
       text: formattedText,
       selection: TextSelection.collapsed(
@@ -584,12 +655,12 @@ class _PhoneNumberFormatter extends TextInputFormatter {
       ),
     );
   }
-  
+
   String _formatPhoneNumber(String digits) {
     if (digits.length <= 5) {
       return digits;
     }
-    
+
     final firstPart = digits.substring(0, 5);
     final secondPart = digits.substring(5);
     return '$firstPart $secondPart';
