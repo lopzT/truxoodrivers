@@ -1,19 +1,52 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'otp_page.dart';
 import 'driver_sign_up_page.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:io';
+import 'services/firebase_auth_service.dart'; 
 import 'dart:async';
 
-class Config {
-  static const bool isDev = kDebugMode;
-  static const String devBaseUrl = 'http://10.0.2.2:3000';
-  static const String productionBaseUrl = 'https://api.truxoo.com';
+class PhoneValidator {
+  static const String countryCode = '+91';
+  static const int phoneLength = 10;
   
-  static String get baseUrl => isDev ? devBaseUrl : productionBaseUrl;
+  static bool isValidIndianMobile(String phone) {
+    final digitsOnly = phone.replaceAll(RegExp(r'[^\d]'), '');
+    return digitsOnly.length == phoneLength &&
+        RegExp(r'^[6-9]\d{9}$').hasMatch(digitsOnly);
+  }
+  
+  static String? validate(String phone) {
+    final digitsOnly = phone.replaceAll(RegExp(r'[^\d]'), '');
+    
+    if (digitsOnly.isEmpty) {
+      return 'Phone number is required';
+    }
+    
+    if (digitsOnly.length < phoneLength) {
+      return 'Phone number must be $phoneLength digits';
+    }
+    
+    if (digitsOnly.length > phoneLength) {
+      return 'Phone number cannot exceed $phoneLength digits';
+    }
+    
+    if (!RegExp(r'^[6-9]').hasMatch(digitsOnly)) {
+      return 'Phone number must start with 6-9';
+    }
+    
+    if (!isValidIndianMobile(digitsOnly)) {
+      return 'Please enter a valid Indian mobile number';
+    }
+    
+    return null; 
+  }
+}
+
+enum OtpSendingStage {
+  idle,
+  sending,
+  success,
+  error,
 }
 
 class Login extends StatefulWidget {
@@ -30,8 +63,6 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   static const double _largeScreenBreakpoint = 600;
   static const double _contentWidthRatio = 0.8;
   static const double _horizontalPaddingRatio = 0.05;
-  static const int _phoneNumberLength = 10;
-  static const String _countryCode = '+91';
 
   late final TextEditingController _contactNumberController;
   late final FocusNode _phoneFocusNode;
@@ -43,8 +74,8 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   late Animation<Offset> _slideAnimation;
   late Animation<double> _buttonScaleAnimation;
 
-  bool _isLoading = false;
   bool _isValidNumber = false;
+  OtpSendingStage _sendingStage = OtpSendingStage.idle;
 
   @override
   void initState() {
@@ -118,9 +149,9 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   }
 
   void _validatePhoneNumber() {
-    final phoneNumber = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
-    final isValid = phoneNumber.length == _phoneNumberLength &&
-        RegExp(r'^[6-9]\d{9}$').hasMatch(phoneNumber);
+    final phoneNumber = _contactNumberController.text
+        .replaceAll(RegExp(r'[^\d]'), '');
+    final isValid = PhoneValidator.isValidIndianMobile(phoneNumber);
 
     if (_isValidNumber != isValid) {
       setState(() {
@@ -140,143 +171,152 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Map<String, double> _getResponsiveSizes(double screenWidth, double screenHeight) {
+  Map<String, double> _getResponsiveSizes(
+    double screenWidth,
+    double screenHeight,
+  ) {
     final isLargeScreen = screenWidth > _largeScreenBreakpoint;
     return {
       'titleFontSize': isLargeScreen ? 42.0 : 36.0,
       'subtitleFontSize': isLargeScreen ? 14.0 : 12.0,
       'inputFontSize': isLargeScreen ? 18.0 : 16.0,
       'buttonFontSize': isLargeScreen ? 18.0 : 16.0,
-      'verticalSpacing': isLargeScreen ? screenHeight * 0.06 : screenHeight * 0.04,
-      'buttonSpacing': isLargeScreen ? screenHeight * 0.07 : screenHeight * 0.04,
+      'verticalSpacing': isLargeScreen 
+          ? screenHeight * 0.06 
+          : screenHeight * 0.04,
+      'buttonSpacing': isLargeScreen 
+          ? screenHeight * 0.07 
+          : screenHeight * 0.04,
       'appBarHeight': isLargeScreen ? 60.0 : 50.0,
       'buttonHeight': isLargeScreen ? 60.0 : 47.0,
     };
   }
 
-  Future<bool> sendPhoneNumberToBackend(String phoneNumber) async {
-    const int maxRetries = 3;
-    const Duration baseDelay = Duration(seconds: 1);
-    
-    final url = Uri.parse('${Config.baseUrl}/api/send-otp');
-    
-    for (int attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        debugPrint('Sending OTP request (attempt ${attempt + 1}/$maxRetries) to: $url');
-        
-        final response = await http.post(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'TruxooDriver/1.0',
-          },
-          body: jsonEncode({'phone': phoneNumber}),
-        ).timeout(const Duration(seconds: 15));
-        
-        debugPrint('Response status: ${response.statusCode}, body: ${response.body}');
-        
-        if (response.statusCode == 200) {
-          return true;
-        } else if (response.statusCode == 429) {
-          _showErrorSnackBar('Too many requests. Please wait a moment.');
-          return false;
-        } else if (response.statusCode >= 400 && response.statusCode < 500) {
-          _showErrorSnackBar('Invalid phone number or request.');
-          return false;
-        } else if (response.statusCode >= 500) {
-          if (attempt < maxRetries - 1) {
-            await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
-            continue;
-          } else {
-            _showErrorSnackBar('Server error. Please try again later.');
-            return false;
-          }
-        }
-        
-      } on SocketException catch (e) {
-        debugPrint('Network error (attempt ${attempt + 1}): $e');
-        if (attempt < maxRetries - 1) {
-          await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
-          continue;
-        } else {
-          _showErrorSnackBar('No internet connection. Please check your network.');
-          return false;
-        }
-      } on TimeoutException catch (e) {
-        debugPrint('Timeout error (attempt ${attempt + 1}): $e');
-        if (attempt < maxRetries - 1) {
-          await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
-          continue;
-        } else {
-          _showErrorSnackBar('Request timeout. Please try again.');
-          return false;
-        }
-      } catch (e) {
-        debugPrint('Unexpected error (attempt ${attempt + 1}): $e');
-        if (attempt < maxRetries - 1) {
-          await Future.delayed(Duration(seconds: baseDelay.inSeconds * (attempt + 1)));
-          continue;
-        } else {
-          _showErrorSnackBar('Failed to send OTP. Please try again.');
-          return false;
-        }
-      }
-    }
-    
-    return false;
+void _handleNext() async {
+  final contact = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
+  final validationError = PhoneValidator.validate(contact);
+  if (validationError != null) {
+    _showErrorSnackBar(validationError);
+    return;
   }
 
-  void _handleNext() async {
-    final contact = _contactNumberController.text.replaceAll(RegExp(r'[^\d]'), '');
+  HapticFeedback.lightImpact();
+  FocusScope.of(context).unfocus();
+  setState(() => _sendingStage = OtpSendingStage.sending);
 
-    if (!_isValidNumber || contact.length != _phoneNumberLength) {
-      _showErrorSnackBar('Please enter a valid 10-digit phone number');
-      return;
-    }
+  // Check if user is already registered (for login flow)
+  final checkResult = await FirebaseAuthService.checkPhoneForLogin(contact);
+  
+  if (!mounted) return;
 
-    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(contact)) {
-      _showErrorSnackBar('Please enter a valid Indian mobile number');
-      return;
-    }
+  if (!checkResult['isRegistered']) {
+    // User is not registered - show message
+    setState(() => _sendingStage = OtpSendingStage.idle);
+    _showNotRegisteredDialog(contact);
+    return;
+  }
 
-    HapticFeedback.lightImpact();
-    setState(() => _isLoading = true);
+  // User is registered, proceed with OTP
+  await FirebaseAuthService.sendOTP(
+    phoneNumber: contact,
+    isLoginFlow: true,
+    onCodeSent: (verificationId) async {
+      if (!mounted) return;
+      
+      setState(() => _sendingStage = OtpSendingStage.success);
+      await Future.delayed(const Duration(milliseconds: 300));
 
-    final success = await sendPhoneNumberToBackend(contact);
+      if (mounted) {
+        HapticFeedback.mediumImpact();
+        Navigator.push(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => 
+                OtpPage(
+                  phoneNumber: contact, 
+                  verificationId: verificationId,
+                  isLoginFlow: true, // Add this parameter
+                ),
+            transitionsBuilder:
+                (context, animation, secondaryAnimation, child) {
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.1, 0),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                  )),
+                  child: child,
+                ),
+              );
+            },
+            transitionDuration: _transitionDuration,
+          ),
+        );
+      }
+    },
+    onError: (error) {
+      if (!mounted) return;
+      setState(() => _sendingStage = OtpSendingStage.error);
+      _showErrorSnackBar(error);
+    },
+  );
+}
 
-    setState(() => _isLoading = false);
-
-    if (!success) {
-      return;
-    }
-
-    if (mounted) {
-      HapticFeedback.mediumImpact();
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              OtpPage(phoneNumber: contact),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0.1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                )),
-                child: child,
+  void _showNotRegisteredDialog(String phoneNumber) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Not Registered'),
+      content: Text(
+        'Phone number +91 $phoneNumber is not registered.\n\nWould you like to sign up?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            Navigator.pop(context);
+            // Navigate to registration
+            Navigator.push(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    const DriverRegistrationPage(),
+                transitionsBuilder:
+                    (context, animation, secondaryAnimation, child) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.1, 0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: child,
+                    ),
+                  );
+                },
+                transitionDuration: _transitionDuration,
               ),
             );
           },
-          transitionDuration: _transitionDuration,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.black,
+          ),
+          child: const Text('Sign Up', style: TextStyle(color: Colors.white)),
         ),
-      );
-    }
-  }
+      ],
+    ),
+  );
+}
 
   void _showErrorSnackBar(String message) {
     HapticFeedback.heavyImpact();
@@ -344,7 +384,11 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildHeader(double screenWidth, double screenHeight, Map<String, double> sizes) {
+  Widget _buildHeader(
+    double screenWidth,
+    double screenHeight,
+    Map<String, double> sizes,
+  ) {
     return SlideTransition(
       position: _slideAnimation,
       child: Padding(
@@ -387,7 +431,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                   child: Transform.translate(
                     offset: Offset(0, 15 * (1 - value)),
                     child: Text(
-                      'This number will be used for all transport related communication. Upon entering you shall receive a SMS with code for verification', 
+                      'This number will be used for all transport related communication. Upon entering you shall receive a SMS with code for verification',
                       style: TextStyle(
                         fontSize: sizes['subtitleFontSize'],
                         color: const Color(0xFF5F5353),
@@ -423,7 +467,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                   enableSuggestions: false,
                   autocorrect: false,
                   keyboardType: TextInputType.phone,
-                  maxLength: 11, 
+                  maxLength: 14, 
                   style: TextStyle(
                     fontSize: sizes['inputFontSize'],
                     fontWeight: FontWeight.w500,
@@ -451,18 +495,13 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide(
-                        color: _isValidNumber ? Colors.green[300]! : Colors.grey[300]!,
+                        color: _isValidNumber
+                            ? Colors.green[300]!
+                            : Colors.grey[300]!,
                         width: 1.5,
                       ),
                     ),
-                    errorBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: Colors.red,
-                        width: 2,
-                      ),
-                    ),
-                    prefixText: '$_countryCode ',
+                    prefixText: '+91 ',
                     prefixStyle: TextStyle(
                       color: Colors.black87,
                       fontWeight: FontWeight.w600,
@@ -474,15 +513,20 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                       fontWeight: FontWeight.w400,
                     ),
                     contentPadding: EdgeInsets.symmetric(
-                      vertical: sizes['inputFontSize']! > 17 ? 16 : 12,
+                      vertical:
+                          sizes['inputFontSize']! > 17 ? 16 : 12,
                       horizontal: 16,
                     ),
                     suffixIcon: _contactNumberController.text.isNotEmpty
                         ? AnimatedSwitcher(
                             duration: const Duration(milliseconds: 200),
                             child: Icon(
-                              _isValidNumber ? Icons.check_circle : Icons.error,
-                              color: _isValidNumber ? Colors.green : Colors.red,
+                              _isValidNumber
+                                  ? Icons.check_circle
+                                  : Icons.error,
+                              color: _isValidNumber
+                                  ? Colors.green
+                                  : Colors.red,
                               key: ValueKey(_isValidNumber),
                             ),
                           )
@@ -503,21 +547,22 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
   }
 
   Widget _buildNextButton(double screenWidth, Map<String, double> sizes) {
+    final isLoading = _sendingStage == OtpSendingStage.sending;
+
     return ScaleTransition(
       scale: _buttonScaleAnimation,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         child: TextButton(
-          onPressed: _isLoading ? null : _handleNext,
+          onPressed: isLoading ? null : _handleNext,
           style: TextButton.styleFrom(
-            backgroundColor: _isValidNumber 
-                ? Colors.black 
-                : Colors.grey[300],
+            backgroundColor:
+                _isValidNumber ? Colors.black : Colors.grey[300],
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
             minimumSize: Size(
-              screenWidth * _contentWidthRatio, 
+              screenWidth * _contentWidthRatio,
               sizes['buttonHeight']!,
             ),
             padding: EdgeInsets.symmetric(
@@ -525,7 +570,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
             ),
             elevation: _isValidNumber ? 2 : 0,
           ),
-          child: _isLoading
+          child: isLoading
               ? SizedBox(
                   width: 24,
                   height: 24,
@@ -540,7 +585,9 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                   'Send OTP',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: _isValidNumber ? Colors.white : Colors.grey[600],
+                    color: _isValidNumber
+                        ? Colors.white
+                        : Colors.grey[600],
                     fontSize: sizes['buttonFontSize'],
                     fontWeight: FontWeight.w500,
                   ),
@@ -564,9 +611,9 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
               children: [
                 Text(
                   "Don't already have an account? ",
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 14,
-                    color: const Color(0xFF5F5353),
+                    color: Color(0xFF5F5353),
                   ),
                 ),
                 GestureDetector(
@@ -575,9 +622,12 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                     Navigator.push(
                       context,
                       PageRouteBuilder(
-                        pageBuilder: (context, animation, secondaryAnimation) => 
-                            const DriverRegistrationPage(),
-                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                        pageBuilder:
+                            (context, animation, secondaryAnimation) =>
+                                const DriverRegistrationPage(),
+                        transitionsBuilder:
+                            (context, animation, secondaryAnimation,
+                                child) {
                           return FadeTransition(
                             opacity: animation,
                             child: SlideTransition(
@@ -596,7 +646,7 @@ class _LoginState extends State<Login> with TickerProviderStateMixin {
                       ),
                     );
                   },
-                  child: Text(
+                  child: const Text(
                     "Sign up here",
                     style: TextStyle(
                       fontSize: 14,
@@ -621,8 +671,8 @@ class _PhoneNumberFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-
     final digitsOnly = newValue.text.replaceAll(RegExp(r'[^\d]'), '');
+
     if (digitsOnly.length > 10) {
       final limitedDigits = digitsOnly.substring(0, 10);
       final formattedText = _formatPhoneNumber(limitedDigits);
@@ -633,20 +683,7 @@ class _PhoneNumberFormatter extends TextInputFormatter {
     }
 
     final formattedText = _formatPhoneNumber(digitsOnly);
-
-    int cursorPosition = formattedText.length;
-    if (newValue.selection.baseOffset < newValue.text.length) {
-      final digitsBefore = newValue.text
-          .substring(0, newValue.selection.baseOffset)
-          .replaceAll(RegExp(r'[^\d]'), '')
-          .length;
-
-      if (digitsBefore <= 5) {
-        cursorPosition = digitsBefore;
-      } else {
-        cursorPosition = digitsBefore + 1; 
-      }
-    }
+    final cursorPosition = formattedText.length;
 
     return TextEditingValue(
       text: formattedText,
@@ -657,9 +694,8 @@ class _PhoneNumberFormatter extends TextInputFormatter {
   }
 
   String _formatPhoneNumber(String digits) {
-    if (digits.length <= 5) {
-      return digits;
-    }
+    if (digits.isEmpty) return '';
+    if (digits.length <= 5) return digits;
 
     final firstPart = digits.substring(0, 5);
     final secondPart = digits.substring(5);

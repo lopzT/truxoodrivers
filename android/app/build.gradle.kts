@@ -2,11 +2,13 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+    // Add this line for Firebase
+    id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.truxoo.truxoo"
-    compileSdk = 35  
+    compileSdk = 36  
     ndkVersion = "27.0.12077973"  
 
     compileOptions {
@@ -21,8 +23,8 @@ android {
 
     defaultConfig {
         applicationId = "com.truxoo.truxoo"
-        minSdk = 21  
-        targetSdk = 35
+        minSdk = flutter.minSdkVersion  
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     
@@ -45,6 +47,14 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     
-    // Add multidex support
+    // Multidex support
     implementation("androidx.multidex:multidex:2.0.1")
+    
+    // Firebase dependencies (these are usually added automatically by FlutterFire)
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    
+    // Required for Firebase Auth
+    implementation("androidx.browser:browser:1.7.0")
 }

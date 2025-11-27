@@ -32,6 +32,7 @@ class Maps extends StatefulWidget {
   final LatLng destinationLocation;
   final int selectedIndex;
   final Function(Map<String, dynamic>) onCompletion;
+  
   const Maps({
     super.key, 
     this.isDriverOnline = true,
@@ -50,8 +51,11 @@ class Maps extends StatefulWidget {
 }
 
 class _MapsState extends State<Maps> with WidgetsBindingObserver {
+  // Map Controllers
   GoogleMapController? _mapController;
   LatLng _currentLocation = const LatLng(20.3490, 85.8077);
+  
+  // Booking Details
   late LatLng _pickupLocation;
   late LatLng _destinationLocation;
   late String _customerName;
@@ -60,36 +64,51 @@ class _MapsState extends State<Maps> with WidgetsBindingObserver {
   late bool _isDriverOnline;
   late bool _hasAcceptedBooking;
 
+  // Network & API
   final List<http.Client> _httpClients = [];
   double _locationAccuracy = 0.0;
   bool _isDisposed = false;
+  String? _googleMapsApiKey;
+  bool _isNetworkAvailable = true;
+  bool _isLoadingRoute = false;
   
+  // Map UI Elements
   Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
   List<LatLng> _polylineCoordinates = [];
   PolylinePoints _polylinePoints = PolylinePoints();
+  final Map<String, List<LatLng>> _polylineCache = {};
   
+  // Status Flags
   bool _isLoadingLocation = true;
   bool _isAtPickup = false;
   bool _isOtpVerified = false;
+  bool _isSliding = false;
+  bool _isVerifyingOtp = false;
+  bool _hasInitialized = false;
+  
+  // OTP & Ride Management
   String _otpInput = '';
   final String _correctOtp = '1234';
   double _sliderValue = 0.0;
-  bool _isSliding = false;
-  
   RideStatus _rideStatus = RideStatus.accepted;
   int _otpRetryCount = 0;
   final int _maxOtpRetries = 3;
+  
+  // Tracking & Metrics
   double _distance = 0.0;
   String _estimatedTime = '';
   double _estimatedEarnings = 0.0;
   double _distanceToTarget = 0.0;
   String _rideId = '';
-  bool _isNetworkAvailable = true;
-  bool _isLoadingRoute = false;
-  String? _googleMapsApiKey;
   
+  // Location Stream Management
   StreamSubscription<Position>? _positionStream;
+  Timer? _routeCalculationDebounce;
+  int _locationRetryCount = 0;
+  final int _maxLocationRetries = 3;
+  
+  // Ride History
   final List<RideHistory> _rideHistory = [
     RideHistory(
       customerName: 'Guru Prasad Panda',
@@ -110,49 +129,46 @@ class _MapsState extends State<Maps> with WidgetsBindingObserver {
     MonthlyEarning(month: 'Jun', amount: 14527.00),
   ];
 
-  bool _hasInitialized = false;
-
-@override
-void initState() {
-  super.initState();
-  _isDisposed = false;  
-  
-  WidgetsBinding.instance.addObserver(this);
-  BackButtonInterceptor.add(_backButtonInterceptor);
-  
-  _pickupLocation = widget.pickupLocation;
-  _destinationLocation = widget.destinationLocation;
-  _customerName = widget.customerName;
-  _pickupLocationName = widget.pickupLocationName;
-  _destinationLocationName = widget.destinationLocationName;
-  _isDriverOnline = widget.isDriverOnline;
-  _hasAcceptedBooking = widget.hasAcceptedBooking;
-  
-  _rideId = _generateTrackingNumber();
-  _calculateEstimatedEarnings();
-  
-}
-
-@override
-void didChangeDependencies() {
-  super.didChangeDependencies();
-  
-  if (!_hasInitialized) {
-    _hasInitialized = true;
+  @override
+  void initState() {
+    super.initState();
+    _isDisposed = false;
     
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadEnvironment();
-      _initializeMap();
-      
-      if (_isDriverOnline && _hasAcceptedBooking) {
-        _loadOtpVerificationState();
-        _startLocationStream();
-      } else {
-        _resetMapState();
-      }
-    });
+    WidgetsBinding.instance.addObserver(this);
+    BackButtonInterceptor.add(_backButtonInterceptor);
+    
+    _pickupLocation = widget.pickupLocation;
+    _destinationLocation = widget.destinationLocation;
+    _customerName = widget.customerName;
+    _pickupLocationName = widget.pickupLocationName;
+    _destinationLocationName = widget.destinationLocationName;
+    _isDriverOnline = widget.isDriverOnline;
+    _hasAcceptedBooking = widget.hasAcceptedBooking;
+    
+    _rideId = _generateTrackingNumber();
+    _calculateEstimatedEarnings();
   }
-}
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    if (!_hasInitialized) {
+      _hasInitialized = true;
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadEnvironment();
+        _initializeMap();
+        
+        if (_isDriverOnline && _hasAcceptedBooking) {
+          _loadOtpVerificationState();
+          _startLocationStream();
+        } else {
+          _resetMapState();
+        }
+      });
+    }
+  }
 
   void _safeSetState(VoidCallback fn) {
     if (mounted && !_isDisposed) {
@@ -175,20 +191,18 @@ void didChangeDependencies() {
     _estimatedEarnings = 0.0;
     _distanceToTarget = 0.0;
     _locationAccuracy = 0.0;
-    
+    _polylineCache.clear();
     _googleMapsApiKey = null;
   }
 
   void _stopLocationStream() {
-    if (_positionStream != null) {
-      _positionStream!.cancel();
-      _positionStream = null;
-    }
+    _positionStream?.cancel();
+    _positionStream = null;
   }
 
   Future<void> _loadEnvironment() async {
     try {
-      await dotenv.load();
+      // Environment is already loaded in main.dart
       final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'];
       
       if (apiKey == null || apiKey.isEmpty) {
@@ -205,22 +219,22 @@ void didChangeDependencies() {
   }
 
   void _showApiKeyError() {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Maps API not configured. Please check your setup.'),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'Retry',
-          onPressed: _loadEnvironment,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Maps API not configured. Please check your setup.'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _loadEnvironment,
+          ),
         ),
-      ),
-    );
-  });
-}
+      );
+    });
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -228,19 +242,23 @@ void didChangeDependencies() {
     
     switch (state) {
       case AppLifecycleState.resumed:
-        _getCurrentLocation();
-        _checkNetworkStatus();
-        
-        if (_isDriverOnline && _hasAcceptedBooking && !_isDisposed) {
-          _startLocationStream();
-        }
+        // Add delay to ensure proper initialization
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!mounted || _isDisposed) return;
+          
+          _getCurrentLocation();
+          _checkNetworkStatus();
+          
+          if (_isDriverOnline && _hasAcceptedBooking) {
+            _startLocationStream();
+          }
+        });
         break;
         
       case AppLifecycleState.inactive:
         break;
         
       case AppLifecycleState.paused:
-        
         if (_positionStream != null) {
           _stopLocationStream();
           _startBackgroundLocationTracking();
@@ -264,9 +282,9 @@ void didChangeDependencies() {
 
     try {
       LocationSettings backgroundSettings = LocationSettings(
-        accuracy: LocationAccuracy.low, 
-        distanceFilter: 50, 
-        timeLimit: const Duration(seconds: 30), 
+        accuracy: LocationAccuracy.low,
+        distanceFilter: 50,
+        timeLimit: const Duration(seconds: 30),
       );
 
       _positionStream = Geolocator.getPositionStream(
@@ -275,21 +293,16 @@ void didChangeDependencies() {
         (Position position) {
           if (!mounted || _isDisposed) return;
           
-          _safeSetState(() {
-            _currentLocation = LatLng(position.latitude, position.longitude);
-            _locationAccuracy = position.accuracy;
-          });
-
-          _updateDistanceToTarget();
-          _checkIfAtPickup();
-          
+          _updateLocationAndUI(position);
         },
         onError: (error) {
+          // Handle silently in background
         },
         cancelOnError: false,
       );
       
-    } catch (e) {//
+    } catch (e) {
+      // Handle silently
     }
   }
 
@@ -298,6 +311,7 @@ void didChangeDependencies() {
     _markers.clear();
     _polylines.clear();
     _polylineCoordinates.clear();
+    _polylineCache.clear();
     _mapController?.dispose();
     _mapController = null;
   }
@@ -329,85 +343,21 @@ void didChangeDependencies() {
   }
   
   void _showNetworkErrorSnackbar() {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('No internet connection. Route calculation disabled.'),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'Retry',
-          onPressed: _checkNetworkStatus,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('No internet connection. Route calculation disabled.'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _checkNetworkStatus,
+          ),
         ),
-      ),
-    );
-  });
-}
-
-  Future<LatLng?> _geocodeAddress(String address) async {
-    if (!_isNetworkAvailable || _googleMapsApiKey == null || _googleMapsApiKey!.isEmpty || _isDisposed) {
-      return null;
-    }
-    
-    final client = http.Client();
-    _httpClients.add(client);
-    
-    try {
-      final String url = 'https://maps.googleapis.com/maps/api/geocode/json'
-          '?address=${Uri.encodeComponent(address)}'
-          '&key=$_googleMapsApiKey';
-      
-      final response = await client.get(Uri.parse(url));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        
-        if (data['status'] == 'OK' && data['results'].isNotEmpty) {
-          final location = data['results'][0]['geometry']['location'];
-          return LatLng(location['lat'], location['lng']);
-        }
-      }
-    } catch (e) {
-      //
-    } finally {
-      _httpClients.remove(client);
-      client.close();
-    }
-    return null;
-  }
-
-  Future<Map<String, dynamic>?> _getPlaceDetails(String placeId) async {
-    if (!_isNetworkAvailable || _googleMapsApiKey == null || _googleMapsApiKey!.isEmpty || _isDisposed) {
-      return null;
-    }
-    
-    final client = http.Client();
-    _httpClients.add(client);
-    
-    try {
-      final String url = 'https://maps.googleapis.com/maps/api/place/details/json'
-          '?place_id=$placeId'
-          '&fields=name,geometry,formatted_address,types'
-          '&key=$_googleMapsApiKey';
-      
-      final response = await client.get(Uri.parse(url));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        
-        if (data['status'] == 'OK') {
-          return data['result'];
-        }
-      }
-    } catch (e) {
-      // 
-    } finally {
-      _httpClients.remove(client);
-      client.close();
-    }
-    return null;
+      );
+    });
   }
 
   Future<Map<String, dynamic>?> _getDirectionsWithETA(LatLng origin, LatLng destination) async {
@@ -416,7 +366,7 @@ void didChangeDependencies() {
     }
     
     final client = http.Client();
-    _httpClients.add(client); 
+    _httpClients.add(client);
     
     try {
       final String url = 'https://maps.googleapis.com/maps/api/directions/json'
@@ -429,6 +379,8 @@ void didChangeDependencies() {
       
       final response = await client.get(Uri.parse(url))
           .timeout(const Duration(seconds: 10));
+      
+      if (!mounted || _isDisposed) return null;
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -448,25 +400,16 @@ void didChangeDependencies() {
             'polylinePoints': routePoints,
             'distance': leg['distance']['text'],
             'duration': leg['duration']['text'],
-            'durationValue': leg['duration']['value'], 
-            'distanceValue': leg['distance']['value'], 
+            'durationValue': leg['duration']['value'],
+            'distanceValue': leg['distance']['value'],
             'trafficDuration': leg['duration_in_traffic']?['text'] ?? leg['duration']['text'],
             'trafficDurationValue': leg['duration_in_traffic']?['value'] ?? leg['duration']['value'],
           };
-        } else {
-          final status = data['status'];
-          final errorMessage = data['error_message'] ?? 'Unknown API error';
-          throw Exception('Directions API error: $status - $errorMessage');
         }
-      } else {
-        throw Exception('HTTP ${response.statusCode}: ${response.reasonPhrase}');
       }
-    } on TimeoutException {
-      rethrow; 
-    } on FormatException {
-      rethrow; 
+      return null;
     } catch (e) {
-      throw Exception('Directions API request failed: $e');
+      return null;
     } finally {
       _httpClients.remove(client);
       client.close();
@@ -474,6 +417,11 @@ void didChangeDependencies() {
   }
 
   List<LatLng> _decodePolyline(String polylineString) {
+    // Check cache first
+    if (_polylineCache.containsKey(polylineString)) {
+      return _polylineCache[polylineString]!;
+    }
+    
     List<LatLng> points = [];
     int index = 0, len = polylineString.length;
     int lat = 0, lng = 0;
@@ -500,95 +448,116 @@ void didChangeDependencies() {
 
       points.add(LatLng(lat / 1E5, lng / 1E5));
     }
+    
+    // Cache the result
+    _polylineCache[polylineString] = points;
+    
+    // Limit cache size
+    if (_polylineCache.length > 10) {
+      _polylineCache.remove(_polylineCache.keys.first);
+    }
+    
     return points;
   }
 
   void _startLocationStream() {
-  _positionStream?.cancel();
-  
-  if (!mounted || !_isDriverOnline || !_hasAcceptedBooking || _isDisposed) {
-    return;
-  }
-
-  try {
-    LocationSettings locationSettings = LocationSettings(
-      accuracy: _getLocationAccuracy(),
-      distanceFilter: _getDistanceFilter(), 
-      timeLimit: const Duration(seconds: 15), 
-    );
-
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen(
-      (Position position) {
-        if (!mounted || _isDisposed) return;
-        
-        final previousLocation = _currentLocation;
-        
-        _safeSetState(() {
-          _currentLocation = LatLng(position.latitude, position.longitude);
-          _locationAccuracy = position.accuracy;
-          _updateMarkers();
-        });
-        _updateDistanceToTarget();
-        _checkIfAtPickup();
-        _updateCameraIfNeeded(previousLocation);
-
-        if (!_isOtpVerified && _isNetworkAvailable) {
-          _getDirectionsRoute();
-        } else if (_isOtpVerified) {
-          _clearRoutes();
-        }
-
-        _checkLocationAccuracy(position.accuracy);
-      },
-      onError: (error) {
-        if (mounted && !_isDisposed) {
-          _handleLocationStreamError(error);
-        }
-      },
-      cancelOnError: false, 
-    );
-
-
+    _stopLocationStream();
+    _locationRetryCount = 0;
     
-  } catch (e) {
-    if (mounted && !_isDisposed) {
-      _showErrorSnackbar('Failed to start location tracking: ${e.toString()}');
+    if (!mounted || !_isDriverOnline || !_hasAcceptedBooking || _isDisposed) {
+      return;
+    }
+
+    try {
+      LocationSettings locationSettings = LocationSettings(
+        accuracy: _getLocationAccuracy(),
+        distanceFilter: _getDistanceFilter(),
+        timeLimit: const Duration(seconds: 15),
+      );
+
+      _positionStream = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (Position position) {
+          if (!mounted || _isDisposed) return;
+          
+          _updateLocationAndUI(position);
+        },
+        onError: (error) {
+          if (mounted && !_isDisposed) {
+            _handleLocationStreamError(error);
+          }
+        },
+        cancelOnError: false,
+      );
+      
+    } catch (e) {
+      if (mounted && !_isDisposed) {
+        _showErrorSnackbar('Failed to start location tracking: ${e.toString()}');
+      }
     }
   }
-}
+
+  void _updateLocationAndUI(Position position) {
+    if (!mounted || _isDisposed) return;
+    
+    final previousLocation = _currentLocation;
+    final newLocation = LatLng(position.latitude, position.longitude);
+    
+    // Batch state updates
+    _safeSetState(() {
+      _currentLocation = newLocation;
+      _locationAccuracy = position.accuracy;
+      _updateMarkers();
+    });
+    
+    // Perform non-state operations outside setState
+    _updateDistanceToTarget();
+    _checkIfAtPickup();
+    _updateCameraIfNeeded(previousLocation);
+    
+    // Handle route updates with debouncing
+    if (!_isOtpVerified && _isNetworkAvailable) {
+      _getDirectionsRoute();
+    } else if (_isOtpVerified) {
+      _clearRoutes();
+    }
+    
+    _checkLocationAccuracy(position.accuracy);
+  }
 
   LocationAccuracy _getLocationAccuracy() {
     switch (_rideStatus) {
       case RideStatus.atPickup:
       case RideStatus.inProgress:
-        return LocationAccuracy.best; 
+        return LocationAccuracy.best;
       case RideStatus.enRoute:
-        return LocationAccuracy.high; 
+        return LocationAccuracy.high;
       default:
-        return LocationAccuracy.medium; 
+        return LocationAccuracy.medium;
     }
   }
 
   int _getDistanceFilter() {
     switch (_rideStatus) {
       case RideStatus.atPickup:
-        return 3; 
+        return 3;
       case RideStatus.inProgress:
-        return 5; 
+        return 5;
       case RideStatus.enRoute:
         if (_distanceToTarget < 500) {
-          return 5; 
+          return 5;
         } else {
-          return 15; 
+          return 15;
         }
       default:
-        return 10; 
+        return 10;
     }
   }
 
   void _handleLocationStreamError(dynamic error) {
+    if (!mounted || _isDisposed) return;
+    
     if (error is LocationServiceDisabledException) {
       _showErrorSnackbar('Location services are disabled. Please enable them.');
       _showLocationServiceDialog();
@@ -596,10 +565,18 @@ void didChangeDependencies() {
       _showErrorSnackbar('Location permission denied. Please grant permission.');
       _showPermissionDeniedDialog();
     } else if (error is TimeoutException) {
-      _showWarningSnackbar('Location update timed out. Retrying...');
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && !_isDisposed) _startLocationStream();
-      });
+      if (_locationRetryCount < _maxLocationRetries) {
+        _locationRetryCount++;
+        final delay = Duration(seconds: _locationRetryCount * 2);
+        _showWarningSnackbar('Location update timed out. Retrying in ${delay.inSeconds} seconds...');
+        
+        Future.delayed(delay, () {
+          if (mounted && !_isDisposed) _startLocationStream();
+        });
+      } else {
+        _showErrorSnackbar('Unable to get location updates. Please check your settings.');
+        _locationRetryCount = 0;
+      }
     } else {
       _showErrorSnackbar('Location error: ${error.toString()}');
     }
@@ -607,13 +584,13 @@ void didChangeDependencies() {
 
   void _updateCameraIfNeeded(LatLng previousLocation) {
     if (_mapController == null) return;
+    
     double distanceMoved = Geolocator.distanceBetween(
       previousLocation.latitude,
       previousLocation.longitude,
       _currentLocation.latitude,
       _currentLocation.longitude,
     );
-    
 
     if (distanceMoved > 20 || _rideStatus == RideStatus.atPickup) {
       _mapController!.animateCamera(
@@ -623,7 +600,7 @@ void didChangeDependencies() {
   }
 
   void _checkLocationAccuracy(double accuracy) {
-    if (accuracy > 50) { 
+    if (accuracy > 50) {
       _showWarningSnackbar('GPS accuracy is low (${accuracy.toInt()}m). Move to open area for better signal.');
     }
   }
@@ -641,18 +618,18 @@ void didChangeDependencies() {
   }
   
   void _showArrivalNotification() {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('You have arrived at the pickup location! Please collect OTP from customer.'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 5),
-      ),
-    );
-  });
-}
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You have arrived at the pickup location! Please collect OTP from customer.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    });
+  }
 
   void _resetMapState() {
     _safeSetState(() {
@@ -825,7 +802,7 @@ void didChangeDependencies() {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              _checkLocationPermission(); 
+              _checkLocationPermission();
             },
             child: Text('Try Again', style: TextStyle(fontSize: isLargeScreen ? 16 : 14)),
           ),
@@ -868,7 +845,7 @@ void didChangeDependencies() {
   }
 
   Future<void> _getCurrentLocation() async {
-    if (!mounted || _isDisposed) return; 
+    if (!mounted || _isDisposed) return;
     
     _safeSetState(() {
       _isLoadingLocation = true;
@@ -879,6 +856,7 @@ void didChangeDependencies() {
         _showLocationServiceDialog();
         return;
       }
+      
       LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
@@ -897,7 +875,7 @@ void didChangeDependencies() {
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10), 
+        timeLimit: const Duration(seconds: 10),
       );
 
       if (!mounted || _isDisposed) return;
@@ -938,159 +916,159 @@ void didChangeDependencies() {
   }
 
   void _showLocationError(String message) {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'Retry',
-          textColor: Colors.white,
-          onPressed: _getCurrentLocation,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: _getCurrentLocation,
+          ),
         ),
-      ),
-    );
-  });
-}
+      );
+    });
+  }
 
   Future<void> _getDirectionsRoute() async {
-    if (_isDisposed || !_isNetworkAvailable || _googleMapsApiKey == null || _googleMapsApiKey!.isEmpty || _isOtpVerified) {
-      return;
-    }
+    // Cancel previous debounce
+    _routeCalculationDebounce?.cancel();
     
-    try {
-      _safeSetState(() => _isLoadingRoute = true);
-      final routeData = await _getDirectionsWithETA(_currentLocation, _pickupLocation)
-          .timeout(const Duration(seconds: 15)); 
-      if (routeData != null && mounted && !_isDisposed) {
-        _safeSetState(() {
-          _polylineCoordinates = routeData['polylinePoints'];
-          _distance = routeData['distanceValue'].toDouble();
-          _estimatedTime = routeData['trafficDuration']; 
-          
-          _calculateEstimatedEarnings();
-          
-          _polylines.clear();
-          _polylines.add(
-            Polyline(
-              polylineId: const PolylineId('route'),
-              color: Colors.blue,
-              points: _polylineCoordinates,
-              width: 5,
-            ),
-          );
-        });
-
-        if (_polylineCoordinates.isNotEmpty) {
-          _showSuccessSnackbar('Route calculated successfully!');
-        }
-      } else if (mounted && !_isDisposed) {
-        _showErrorSnackbar('Unable to calculate route. Please try again.');
+    // Debounce route calculations
+    _routeCalculationDebounce = Timer(const Duration(milliseconds: 500), () async {
+      if (_isDisposed || !_isNetworkAvailable || _googleMapsApiKey == null || 
+          _googleMapsApiKey!.isEmpty || _isOtpVerified) {
+        return;
       }
       
-    } on TimeoutException catch (e) {
-      if (mounted && !_isDisposed) {
-        _showErrorSnackbar('Route calculation timed out. Check your internet connection.');
+      try {
+        _safeSetState(() => _isLoadingRoute = true);
+        
+        final routeData = await _getDirectionsWithETA(_currentLocation, _pickupLocation)
+            ?.timeout(const Duration(seconds: 15));
+            
+        if (routeData != null && mounted && !_isDisposed) {
+          _safeSetState(() {
+            _polylineCoordinates = routeData['polylinePoints'];
+            _distance = routeData['distanceValue'].toDouble();
+            _estimatedTime = routeData['trafficDuration'];
+            
+            _calculateEstimatedEarnings();
+            
+            _polylines.clear();
+            _polylines.add(
+              Polyline(
+                polylineId: const PolylineId('route'),
+                color: Colors.blue,
+                points: _polylineCoordinates,
+                width: 5,
+              ),
+            );
+          });
+
+          if (_polylineCoordinates.isNotEmpty) {
+            _showSuccessSnackbar('Route calculated successfully!');
+          }
+        }
+      } on TimeoutException {
+        if (mounted && !_isDisposed) {
+          _showErrorSnackbar('Route calculation timed out. Check your internet connection.');
+        }
+      } catch (e) {
+        if (mounted && !_isDisposed) {
+          _showErrorSnackbar('Failed to calculate route. Please try again.');
+        }
+      } finally {
+        if (mounted && !_isDisposed) {
+          _safeSetState(() => _isLoadingRoute = false);
+        }
       }
-    } on FormatException catch (e) {
-      if (mounted && !_isDisposed) {
-        _showErrorSnackbar('Invalid route data received. Please try again.');
-      }
-    } on Exception catch (e) {
-      if (mounted && !_isDisposed) {
-        _showErrorSnackbar('Failed to calculate route: ${e.toString()}');
-      }
-    } catch (e) {
-      if (mounted && !_isDisposed) {
-        _showErrorSnackbar('An unexpected error occurred. Please try again.');
-      }
-    } finally {
-      if (mounted && !_isDisposed) {
-        _safeSetState(() => _isLoadingRoute = false);
-      }
-    }
+    });
   }
 
   void _showErrorSnackbar(String message) {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () {
+              _getDirectionsRoute();
+            },
+          ),
+        ),
+      );
+    });
+  }
+
+  void _showSuccessSnackbar(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(
                 message,
                 style: const TextStyle(color: Colors.white),
               ),
-            ),
-          ],
+            ],
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
         ),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-          label: 'Retry',
-          textColor: Colors.white,
-          onPressed: () {
-            _getDirectionsRoute();
-          },
-        ),
-      ),
-    );
-  });
-}
-
-  void _showSuccessSnackbar(String message) {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(
-              message,
-              style: const TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  });
-}
+      );
+    });
+  }
 
   void _showWarningSnackbar(String message) {
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!mounted || _isDisposed) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.warning_amber_outlined, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(
-              message,
-              style: const TextStyle(color: Colors.white),
-            ),
-          ],
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposed) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.warning_amber_outlined, color: Colors.white),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
         ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  });
-}
+      );
+    });
+  }
   
   void _calculateEstimatedEarnings() {
     double fare = 8000.00;
@@ -1146,7 +1124,16 @@ void didChangeDependencies() {
     }
   }
 
-  void _verifyOtp() {
+  void _verifyOtp() async {
+    if (_isVerifyingOtp) return;
+    
+    _safeSetState(() {
+      _isVerifyingOtp = true;
+    });
+    
+    // Simulate verification delay
+    await Future.delayed(const Duration(milliseconds: 500));
+    
     if (_otpInput == _correctOtp) {
       _safeSetState(() {
         _isOtpVerified = true;
@@ -1155,7 +1142,6 @@ void didChangeDependencies() {
       });
       _saveOtpVerificationState();
       _updateMarkers();
-
       _clearRoutes();
       
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1168,6 +1154,10 @@ void didChangeDependencies() {
     } else {
       _handleOtpError();
     }
+    
+    _safeSetState(() {
+      _isVerifyingOtp = false;
+    });
   }
   
   void _handleOtpError() {
@@ -1340,33 +1330,39 @@ void didChangeDependencies() {
   }
 
   @override
-void dispose() {
-
-  WidgetsBinding.instance.removeObserver(this);
-  BackButtonInterceptor.remove(_backButtonInterceptor);
-
-  _stopLocationStream();
-  _positionStream?.cancel();
-  _positionStream = null;
-
-  _mapController?.dispose();
-  _mapController = null;
-
-  _markers.clear();
-  _polylines.clear();
-  _polylineCoordinates.clear();
-  _rideHistory.clear();
-  _monthlyEarnings.clear();
-
-  _cancelPendingRequests();
-
-  _clearTemporaryData();
-
-  _isDisposed = true;
-  _hasInitialized = false; 
-
-  super.dispose();
-}
+  void dispose() {
+    _isDisposed = true;
+    
+    // Cancel all timers and streams
+    _routeCalculationDebounce?.cancel();
+    _stopLocationStream();
+    _positionStream?.cancel();
+    _positionStream = null;
+    
+    // Clear collections
+    _cancelPendingRequests();
+    _markers.clear();
+    _polylines.clear();
+    _polylineCoordinates.clear();
+    _polylineCache.clear();
+    _rideHistory.clear();
+    _monthlyEarnings.clear();
+    
+    // Dispose controllers
+    _mapController?.dispose();
+    _mapController = null;
+    
+    // Clear temporary data
+    _clearTemporaryData();
+    
+    // Remove observers
+    WidgetsBinding.instance.removeObserver(this);
+    BackButtonInterceptor.remove(_backButtonInterceptor);
+    
+    _hasInitialized = false;
+    
+    super.dispose();
+  }
 
   bool _backButtonInterceptor(bool stopDefaultButtonEvent, RouteInfo info) {
     _navigateBackToHome();
@@ -1631,7 +1627,7 @@ void dispose() {
                               child: SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
-                                  onPressed: _verifyOtp,
+                                  onPressed: _isVerifyingOtp ? null : _verifyOtp,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.black,
                                     foregroundColor: Colors.white,
@@ -1640,10 +1636,19 @@ void dispose() {
                                       borderRadius: BorderRadius.circular(isLargeScreen ? 12 : 8),
                                     ),
                                   ),
-                                  child: Text(
-                                    'Verify OTP',
-                                    style: TextStyle(fontSize: isLargeScreen ? 18 : 16),
-                                  ),
+                                  child: _isVerifyingOtp 
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Text(
+                                        'Verify OTP',
+                                        style: TextStyle(fontSize: isLargeScreen ? 18 : 16),
+                                      ),
                                 ),
                               ),
                             ),
@@ -1884,7 +1889,7 @@ void dispose() {
                                   
                                   if (_sliderValue >= 0.75) {
                                     _safeSetState(() {
-                                      _sliderValue = 1.0; 
+                                      _sliderValue = 1.0;
                                     });
                                     
                                     Future.delayed(const Duration(milliseconds: 300), () {
@@ -1896,7 +1901,7 @@ void dispose() {
                                   _safeSetState(() {
                                     _isSliding = false;
                                     if (_sliderValue < 0.75) {
-                                      _sliderValue = 0.0; 
+                                      _sliderValue = 0.0;
                                     }
                                   });
                                 },
@@ -1934,4 +1939,3 @@ void dispose() {
     );
   }
 }
-//ready

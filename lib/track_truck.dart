@@ -29,7 +29,6 @@ class _TrackTruckState extends State<TrackTruck> {
     ),
   };
 
-
   final Map<String, List<String>> _locationProgression = {
     'TRX123456': [
       'Near Rasulgarh Square, Bhubaneswar',
@@ -48,11 +47,25 @@ class _TrackTruckState extends State<TrackTruck> {
   }
 
   void _startTracking(String trackingId) {
-    final delivery = _deliveryDatabase[trackingId];
+    // Input validation
+    if (trackingId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a tracking number'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final normalizedId = trackingId.trim().toUpperCase();
+    final delivery = _deliveryDatabase[normalizedId];
+    
     if (delivery == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Invalid tracking number.'),
+          content: Text('Invalid tracking number. Please check and try again.'),
           backgroundColor: Colors.red,
           duration: Duration(seconds: 2),
         ),
@@ -62,11 +75,10 @@ class _TrackTruckState extends State<TrackTruck> {
 
     setState(() {
       _isTracking = true;
-      _currentTrackingId = trackingId;
+      _currentTrackingId = normalizedId;
       _updateCount = 0;
     });
 
-    
     _locationUpdateTimer?.cancel();
     if (delivery.status.toLowerCase() == 'in transit') {
       _locationUpdateTimer = Timer.periodic(
@@ -77,6 +89,7 @@ class _TrackTruckState extends State<TrackTruck> {
   }
 
   void _updateLocation() {
+    if (!mounted) return; // Important: prevent updates after disposal
     if (!_isTracking || _currentTrackingId == null) return;
 
     setState(() {
@@ -100,6 +113,15 @@ class _TrackTruckState extends State<TrackTruck> {
           delivery.status = 'Delivered';
           delivery.currentLocation = 'Delivered at ${delivery.dropLocation}';
           delivery.lastUpdated = DateTime.now();
+          
+          // Show delivery notification
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Package has been delivered!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
         }
       }
 
@@ -125,7 +147,10 @@ class _TrackTruckState extends State<TrackTruck> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            _locationUpdateTimer?.cancel(); // Cancel timer before navigation
+            Navigator.of(context).pop();
+          },
         ),
       ),
       body: SingleChildScrollView(
@@ -144,9 +169,10 @@ class _TrackTruckState extends State<TrackTruck> {
                     children: [
                       TextField(
                         controller: _trackingController,
+                        textCapitalization: TextCapitalization.characters,
                         decoration: InputDecoration(
                           labelText: 'Enter Tracking Number',
-                          
+                          hintText: 'e.g., TRX123456',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -159,6 +185,11 @@ class _TrackTruckState extends State<TrackTruck> {
                             },
                           ),
                         ),
+                        onSubmitted: (value) {
+                          if (value.isNotEmpty) {
+                            _startTracking(value);
+                          }
+                        },
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
@@ -276,7 +307,7 @@ class _TrackTruckState extends State<TrackTruck> {
               child: Text(
                 delivery.status.toLowerCase() == 'in transit'
                     ? 'Location updates every 5 minutes'
-                    : 'Last updated: ${_formatTime(delivery.lastUpdated)}',
+                    : 'Delivery completed',
                 style: TextStyle(
                   color: Colors.grey[600],
                   fontSize: isLargeScreen ? 14 : 12,
@@ -422,4 +453,3 @@ class DeliveryInfo {
     required this.lastUpdated,
   });
 }
-//ready
